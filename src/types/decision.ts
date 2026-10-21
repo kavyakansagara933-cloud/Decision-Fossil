@@ -85,7 +85,8 @@ export const CreateDecisionSchema = z.object({
   reviewDate: z.string().datetime().optional().nullable(),
   tags: z.array(z.string()).optional(),
 });
-export type CreateDecisionInput = z.infer<typeof CreateDecisionSchema>;
+export type CreateDecisionInput = z.input<typeof CreateDecisionSchema>;
+export type CreateDecisionOutput = z.output<typeof CreateDecisionSchema>;
 
 export const UpdateDecisionSchema = z.object({
   title: z.string().min(3).max(200).optional(),
@@ -116,7 +117,7 @@ export const CreateAlternativeSchema = z.object({
   status: AlternativeStatusSchema.default("CONSIDERED"),
   chosen: z.boolean().default(false),
 });
-export type CreateAlternativeInput = z.infer<typeof CreateAlternativeSchema>;
+export type CreateAlternativeInput = z.input<typeof CreateAlternativeSchema>;
 
 export const CreateAssumptionSchema = z.object({
   decisionId: z.string().min(1),
@@ -129,7 +130,7 @@ export const CreateAssumptionSchema = z.object({
   impactNote: z.string().optional(),
   evidenceIds: z.array(z.string()).optional(),
 });
-export type CreateAssumptionInput = z.infer<typeof CreateAssumptionSchema>;
+export type CreateAssumptionInput = z.input<typeof CreateAssumptionSchema>;
 
 export const ValidateAssumptionSchema = z.object({
   newStatus: AssumptionStatusSchema,
@@ -150,7 +151,7 @@ export const CreateEvidenceSchema = z.object({
   note: z.string().optional(),
   assumptionIds: z.array(z.string()).optional(),
 });
-export type CreateEvidenceInput = z.infer<typeof CreateEvidenceSchema>;
+export type CreateEvidenceInput = z.input<typeof CreateEvidenceSchema>;
 
 export const CreateOutcomeSchema = z.object({
   decisionId: z.string().min(1),
@@ -160,7 +161,7 @@ export const CreateOutcomeSchema = z.object({
   measurement: z.string().optional(),
   notes: z.string().optional(),
 });
-export type CreateOutcomeInput = z.infer<typeof CreateOutcomeSchema>;
+export type CreateOutcomeInput = z.input<typeof CreateOutcomeSchema>;
 
 export const CreateDecisionEventSchema = z.object({
   decisionId: z.string().min(1),
