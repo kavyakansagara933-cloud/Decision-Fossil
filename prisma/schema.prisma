@@ -1,0 +1,368 @@
+// Decision Fossil — Prisma Schema
+// Database Engine: SQLite (Local zero-config dev & tests, easily portable to PostgreSQL)
+// Architecture Principle: Historical preservation, relational integrity, non-destructive audit trail
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Authentication & Users ────────────────────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          String    @default("USER") // USER, ADMIN
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  memberships   WorkspaceMember[]
+  decisions     Decision[]        @relation("DecisionCreator")
+  comments      Comment[]
+  events        DecisionEvent[]   @relation("EventActor")
+  validations   AssumptionValidationHistory[] @relation("ValidationActor")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Workspaces ────────────────────────────────────────────────────────────────
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     WorkspaceMember[]
+  decisions   Decision[]
+  assumptions Assumption[]
+  evidence    Evidence[]
+  tags        Tag[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        String   @default("MEMBER") // OWNER, ADMIN, MEMBER, VIEWER
+  joinedAt    DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@map("workspace_members")
+}
+
+// ─── Decision (Core Entity) ────────────────────────────────────────────────────
+model Decision {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  creatorId      String
+  title          String
+  statement      String    // The formal decision statement
+  status         String    @default("DRAFT") // DRAFT, PROPOSED, DECIDED, MONITORING, REASSESSING, VALIDATED, REJECTED, SUPERSEDED
+  priority       String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  currentVersion Int       @default(1)
+  reviewDate     DateTime? // Target date to reassess/revisit
+  decidedAt      DateTime? // Timestamp when status transitioned to DECIDED
+  archivedAt     DateTime? // Soft-delete / archived state
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace      Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator        User                 @relation("DecisionCreator", fields: [creatorId], references: [id])
+  versions       DecisionVersion[]
+  alternatives   Alternative[]
+  assumptions    DecisionAssumption[]
+  evidence       DecisionEvidence[]
+  outcomes       Outcome[]
+  events         DecisionEvent[]
+  comments       Comment[]
+  tags           DecisionTag[]
+
+  @@index([workspaceId])
+  @@index([creatorId])
+  @@index([status])
+  @@map("decisions")
+}
+
+// ─── Decision Versioning (Historical Preservation) ────────────────────────────
+model DecisionVersion {
+  id             String   @id @default(cuid())
+  decisionId     String
+  version        Int
+  statement      String   // Snapshot of the decision statement
+  context        String?  // Context / background leading to this version
+  reasoning      String?  // Why this decision was made/updated
+  statusSnapshot String   @default("DRAFT")
+  changeSummary  String?  // Summary of why this new version was created
+  createdBy      String?
+  createdAt      DateTime @default(now())
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@unique([decisionId, version])
+  @@index([decisionId])
+  @@map("decision_versions")
+}
+
+// ─── Alternatives ──────────────────────────────────────────────────────────────
+model Alternative {
+  id              String   @id @default(cuid())
+  decisionId      String
+  name            String   // Alternative title / option name
+  description     String?
+  pros            String?  // JSON string or structured text of positive factors
+  cons            String?  // JSON string or structured text of drawbacks
+  selectionReason String?  // Explanation for why this was chosen or rejected
+  status          String   @default("CONSIDERED") // PROPOSED, CONSIDERED, SELECTED, REJECTED
+  chosen          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([decisionId])
+  @@map("alternatives")
+}
+
+// ─── Assumptions ───────────────────────────────────────────────────────────────
+model Assumption {
+  id            String    @id @default(cuid())
+  workspaceId   String?
+  statement     String    // What we assume to be true
+  importance    String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  confidence    String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+  status        String    @default("UNVERIFIED") // UNVERIFIED, VALID, QUESTIONABLE, INVALID, UNKNOWN
+  originalState String?   // Initial assumption state / statement at creation
+  currentState  String?   // Current observed state of this assumption
+  reviewDate    DateTime?
+  validatedAt   DateTime?
+  invalidatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace     Workspace?                     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  decisions     DecisionAssumption[]
+  evidenceLinks EvidenceAssumption[]
+  history       AssumptionValidationHistory[]
+
+  @@map("assumptions")
+}
+
+// Validation history: Preserves every state change of an assumption!
+model AssumptionValidationHistory {
+  id             String   @id @default(cuid())
+  assumptionId   String
+  previousStatus String
+  newStatus      String
+  previousState  String?
+  newState       String?
+  reason         String?  // Why this status changed
+  actorId        String?
+  validatedAt    DateTime @default(now())
+
+  assumption Assumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
+  actor      User?      @relation("ValidationActor", fields: [actorId], references: [id])
+
+  @@index([assumptionId])
+  @@map("assumption_validation_histories")
+}
+
+model DecisionAssumption {
+  id           String   @id @default(cuid())
+  decisionId   String
+  assumptionId String
+  impactNote   String?  // Note describing impact on this specific decision
+  addedAt      DateTime @default(now())
+
+  decision   Decision   @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  assumption Assumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
+
+  @@unique([decisionId, assumptionId])
+  @@map("decision_assumptions")
+}
+
+// ─── Evidence ──────────────────────────────────────────────────────────────────
+model Evidence {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  title       String
+  type        String   @default("NOTE") // URL, DOCUMENT, NOTE, BENCHMARK, DATASET, EXPERIMENT, DISCUSSION, OTHER
+  source      String?  // URL, file path, repository link, citation
+  description String?
+  metadata    String?  // JSON string for metrics, benchmark stats, experiment parameters
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace       Workspace?           @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  decisions       DecisionEvidence[]
+  assumptionLinks EvidenceAssumption[]
+
+  @@map("evidence")
+}
+
+model DecisionEvidence {
+  id         String   @id @default(cuid())
+  decisionId String
+  evidenceId String
+  note       String?  // Relevance note for this decision
+  addedAt    DateTime @default(now())
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([decisionId, evidenceId])
+  @@map("decision_evidence")
+}
+
+// Connects Evidence to Assumptions (evidence supporting assumptions)
+model EvidenceAssumption {
+  id           String   @id @default(cuid())
+  evidenceId   String
+  assumptionId String
+  note         String?
+  addedAt      DateTime @default(now())
+
+  evidence   Evidence   @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  assumption Assumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, assumptionId])
+  @@map("evidence_assumptions")
+}
+
+// ─── Outcomes ──────────────────────────────────────────────────────────────────
+model Outcome {
+  id              String    @id @default(cuid())
+  decisionId      String
+  expectedOutcome String    // What we expected would happen
+  actualOutcome   String?   // What actually happened
+  status          String    @default("PENDING") // PENDING, ACHIEVED, PARTIALLY_ACHIEVED, FAILED, UNEXPECTED
+  measurement     String?   // Measurable metrics, KPIs, observations
+  notes           String?
+  recordedAt      DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([decisionId])
+  @@map("outcomes")
+}
+
+// ─── Decision Events (Audit Trail & Timeline) ──────────────────────────────────
+model DecisionEvent {
+  id         String   @id @default(cuid())
+  decisionId String
+  actorId    String?
+  eventType  String   // CREATED, PROPOSED, DECIDED, VERSION_CREATED, ALTERNATIVE_ADDED, ASSUMPTION_ADDED, ASSUMPTION_STATUS_CHANGED, EVIDENCE_ADDED, OUTCOME_RECORDED, REASSESSMENT_STARTED, STATUS_CHANGED, SUPERSEDED
+  title      String
+  detail     String?
+  metadata   String?  // JSON string for contextual payload
+  occurredAt DateTime @default(now())
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  actor    User?    @relation("EventActor", fields: [actorId], references: [id])
+
+  @@index([decisionId])
+  @@index([occurredAt])
+  @@map("decision_events")
+}
+
+// ─── Comments / Discussion ─────────────────────────────────────────────────────
+model Comment {
+  id         String   @id @default(cuid())
+  decisionId String
+  authorId   String
+  content    String
+  parentId   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  decision Decision  @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  author   User      @relation(fields: [authorId], references: [id])
+  parent   Comment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentThread")
+
+  @@index([decisionId])
+  @@map("comments")
+}
+
+// ─── Tags ──────────────────────────────────────────────────────────────────────
+model Tag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String?  @default("#64748b")
+  createdAt   DateTime @default(now())
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  decisions DecisionTag[]
+
+  @@unique([workspaceId, name])
+  @@map("tags")
+}
+
+model DecisionTag {
+  id         String   @id @default(cuid())
+  decisionId String
+  tagId      String
+  addedAt    DateTime @default(now())
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([decisionId, tagId])
+  @@map("decision_tags")
+}
