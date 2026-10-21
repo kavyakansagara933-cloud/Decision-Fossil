@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Decision Status Enum Schema
+// ─── Enums ──────────────────────────────────────────────────────────────────
 export const DecisionStatusSchema = z.enum([
   "DRAFT",
   "PROPOSED",
@@ -54,7 +54,25 @@ export const AlternativeStatusSchema = z.enum([
 ]);
 export type AlternativeStatus = z.infer<typeof AlternativeStatusSchema>;
 
-// Creation Schemas
+export const EventTypeSchema = z.enum([
+  "CREATED",
+  "PROPOSED",
+  "DECIDED",
+  "VERSION_CREATED",
+  "ALTERNATIVE_ADDED",
+  "ASSUMPTION_ADDED",
+  "ASSUMPTION_STATUS_CHANGED",
+  "EVIDENCE_ADDED",
+  "OUTCOME_RECORDED",
+  "REASSESSMENT_STARTED",
+  "STATUS_CHANGED",
+  "SUPERSEDED",
+  "CUSTOM",
+]);
+export type EventType = z.infer<typeof EventTypeSchema>;
+
+// ─── Creation & Mutation Schemas ──────────────────────────────────────────
+
 export const CreateDecisionSchema = z.object({
   workspaceId: z.string().min(1, "Workspace is required"),
   creatorId: z.string().min(1, "Creator is required"),
@@ -68,6 +86,18 @@ export const CreateDecisionSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 export type CreateDecisionInput = z.infer<typeof CreateDecisionSchema>;
+
+export const UpdateDecisionSchema = z.object({
+  title: z.string().min(3).max(200).optional(),
+  statement: z.string().min(10).optional(),
+  priority: DecisionPrioritySchema.optional(),
+  context: z.string().optional(),
+  reasoning: z.string().optional(),
+  reviewDate: z.string().datetime().optional().nullable(),
+  changeSummary: z.string().min(3, "Change summary is required to preserve history"),
+  actorId: z.string().optional(),
+});
+export type UpdateDecisionInput = z.infer<typeof UpdateDecisionSchema>;
 
 export const UpdateDecisionStatusSchema = z.object({
   status: DecisionStatusSchema,
@@ -97,6 +127,7 @@ export const CreateAssumptionSchema = z.object({
   status: AssumptionStatusSchema.default("UNVERIFIED"),
   originalState: z.string().optional(),
   impactNote: z.string().optional(),
+  evidenceIds: z.array(z.string()).optional(),
 });
 export type CreateAssumptionInput = z.infer<typeof CreateAssumptionSchema>;
 
@@ -115,7 +146,9 @@ export const CreateEvidenceSchema = z.object({
   type: EvidenceTypeSchema.default("NOTE"),
   source: z.string().optional(),
   description: z.string().optional(),
+  metadata: z.string().optional(),
   note: z.string().optional(),
+  assumptionIds: z.array(z.string()).optional(),
 });
 export type CreateEvidenceInput = z.infer<typeof CreateEvidenceSchema>;
 
@@ -128,3 +161,13 @@ export const CreateOutcomeSchema = z.object({
   notes: z.string().optional(),
 });
 export type CreateOutcomeInput = z.infer<typeof CreateOutcomeSchema>;
+
+export const CreateDecisionEventSchema = z.object({
+  decisionId: z.string().min(1),
+  actorId: z.string().optional(),
+  eventType: EventTypeSchema,
+  title: z.string().min(2, "Event title is required"),
+  detail: z.string().optional(),
+  metadata: z.string().optional(),
+});
+export type CreateDecisionEventInput = z.infer<typeof CreateDecisionEventSchema>;

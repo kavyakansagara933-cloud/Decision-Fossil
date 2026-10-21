@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/db";
 import {
   CreateDecisionInput,
+  UpdateDecisionInput,
   UpdateDecisionStatusInput,
   CreateAlternativeInput,
   CreateAssumptionInput,
   ValidateAssumptionInput,
   CreateEvidenceInput,
   CreateOutcomeInput,
+  CreateDecisionEventInput,
 } from "@/types/decision";
 
 export class DecisionService {
@@ -55,6 +57,64 @@ export class DecisionService {
       });
 
       return decision;
+    });
+  }
+
+  /**
+   * Update decision statement or rationale with a new immutable version snapshot
+   */
+  static async updateDecision(decisionId: string, input: UpdateDecisionInput) {
+    return await prisma.$transaction(async (tx) => {
+      const current = await tx.decision.findUnique({
+        where: { id: decisionId },
+        include: { versions: { orderBy: { version: "desc" }, take: 1 } },
+      });
+      if (!current) throw new Error("Decision not found");
+
+      const newVersionNum = current.currentVersion + 1;
+      const statement = input.statement ?? current.statement;
+      const latestVer = current.versions[0];
+      const context = input.context ?? latestVer?.context ?? null;
+      const reasoning = input.reasoning ?? latestVer?.reasoning ?? null;
+
+      // Update decision
+      const updated = await tx.decision.update({
+        where: { id: decisionId },
+        data: {
+          title: input.title ?? current.title,
+          statement: input.statement ?? current.statement,
+          priority: input.priority ?? current.priority,
+          reviewDate: input.reviewDate !== undefined ? (input.reviewDate ? new Date(input.reviewDate) : null) : current.reviewDate,
+          currentVersion: newVersionNum,
+        },
+      });
+
+      // Create new historical version snapshot
+      const version = await tx.decisionVersion.create({
+        data: {
+          decisionId,
+          version: newVersionNum,
+          statement,
+          context,
+          reasoning,
+          statusSnapshot: current.status,
+          changeSummary: input.changeSummary,
+          createdBy: input.actorId || null,
+        },
+      });
+
+      // Record event
+      await tx.decisionEvent.create({
+        data: {
+          decisionId,
+          actorId: input.actorId || null,
+          eventType: "VERSION_CREATED",
+          title: `Version ${newVersionNum} created`,
+          detail: input.changeSummary,
+        },
+      });
+
+      return { updated, version };
     });
   }
 
@@ -126,6 +186,11 @@ export class DecisionService {
           include: {
             assumption: {
               include: {
+                evidenceLinks: {
+                  include: {
+                    evidence: true,
+                  },
+                },
                 history: {
                   orderBy: { validatedAt: "desc" },
                   include: {
@@ -140,7 +205,15 @@ export class DecisionService {
         },
         evidence: {
           include: {
-            evidence: true,
+            evidence: {
+              include: {
+                assumptionLinks: {
+                  include: {
+                    assumption: true,
+                  },
+                },
+              },
+            },
           },
         },
         outcomes: {
@@ -237,7 +310,7 @@ export class DecisionService {
   }
 
   /**
-   * Add Assumption with linkage
+   * Add Assumption with linkage and optional evidence connections
    */
   static async addAssumption(input: CreateAssumptionInput) {
     return await prisma.$transaction(async (tx) => {
@@ -260,6 +333,18 @@ export class DecisionService {
           impactNote: input.impactNote,
         },
       });
+
+      // Link any existing evidence items supporting this assumption
+      if (input.evidenceIds && input.evidenceIds.length > 0) {
+        for (const evidenceId of input.evidenceIds) {
+          await tx.evidenceAssumption.create({
+            data: {
+              evidenceId,
+              assumptionId: assumption.id,
+            },
+          });
+        }
+      }
 
       await tx.decisionEvent.create({
         data: {
@@ -332,7 +417,7 @@ export class DecisionService {
   }
 
   /**
-   * Record Evidence
+   * Record Evidence and optionally link to supported assumptions
    */
   static async addEvidence(input: CreateEvidenceInput) {
     return await prisma.$transaction(async (tx) => {
@@ -343,6 +428,7 @@ export class DecisionService {
           type: input.type,
           source: input.source,
           description: input.description,
+          metadata: input.metadata,
         },
       });
 
@@ -353,6 +439,18 @@ export class DecisionService {
           note: input.note,
         },
       });
+
+      // Connect to assumptions if specified
+      if (input.assumptionIds && input.assumptionIds.length > 0) {
+        for (const assumptionId of input.assumptionIds) {
+          await tx.evidenceAssumption.create({
+            data: {
+              evidenceId: evidence.id,
+              assumptionId,
+            },
+          });
+        }
+      }
 
       await tx.decisionEvent.create({
         data: {
@@ -393,6 +491,37 @@ export class DecisionService {
       });
 
       return outcome;
+    });
+  }
+
+  /**
+   * Append custom decision event to timeline
+   */
+  static async createDecisionEvent(input: CreateDecisionEventInput) {
+    return await prisma.decisionEvent.create({
+      data: {
+        decisionId: input.decisionId,
+        actorId: input.actorId || null,
+        eventType: input.eventType,
+        title: input.title,
+        detail: input.detail,
+        metadata: input.metadata,
+      },
+    });
+  }
+
+  /**
+   * Retrieve timeline events for a decision
+   */
+  static async getDecisionTimeline(decisionId: string) {
+    return await prisma.decisionEvent.findMany({
+      where: { decisionId },
+      orderBy: { occurredAt: "desc" },
+      include: {
+        actor: {
+          select: { id: true, name: true, email: true },
+        },
+      },
     });
   }
 }

@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   CreateDecisionSchema,
+  UpdateDecisionSchema,
   UpdateDecisionStatusSchema,
   ValidateAssumptionSchema,
   CreateAlternativeSchema,
+  CreateEvidenceSchema,
+  CreateOutcomeSchema,
+  CreateDecisionEventSchema,
 } from "./decision";
 
 describe("Domain Validation Schemas (Zod)", () => {
@@ -54,6 +58,20 @@ describe("Domain Validation Schemas (Zod)", () => {
     expect(UpdateDecisionStatusSchema.safeParse(invalidTransition).success).toBe(false);
   });
 
+  it("enforces change summary on decision updates to guarantee auditability", () => {
+    const updateWithoutSummary = {
+      title: "Updated Title",
+      changeSummary: "", // Empty
+    };
+    expect(UpdateDecisionSchema.safeParse(updateWithoutSummary).success).toBe(false);
+
+    const validUpdate = {
+      statement: "Updated formal statement clarifying distributed isolation level.",
+      changeSummary: "Upgraded isolation level from read committed to serializable.",
+    };
+    expect(UpdateDecisionSchema.safeParse(validUpdate).success).toBe(true);
+  });
+
   it("validates assumption validation input", () => {
     const validation = {
       newStatus: "INVALID" as const,
@@ -76,6 +94,44 @@ describe("Domain Validation Schemas (Zod)", () => {
     };
 
     const res = CreateAlternativeSchema.safeParse(alt);
+    expect(res.success).toBe(true);
+  });
+
+  it("validates evidence linking across assumptions", () => {
+    const evidence = {
+      decisionId: "dec-123",
+      title: "Postgres 16 Benchmarks",
+      type: "BENCHMARK" as const,
+      source: "https://pgbench.internal/run/82",
+      assumptionIds: ["assump-1", "assump-2"],
+    };
+
+    const res = CreateEvidenceSchema.safeParse(evidence);
+    expect(res.success).toBe(true);
+  });
+
+  it("validates outcomes comparing expectation vs reality", () => {
+    const outcome = {
+      decisionId: "dec-123",
+      expectedOutcome: "Throughput stays above 10,000 req/sec",
+      actualOutcome: "Throughput peaked at 14,200 req/sec without latency spikes",
+      status: "ACHIEVED" as const,
+      measurement: "p99 latency = 12ms",
+    };
+
+    const res = CreateOutcomeSchema.safeParse(outcome);
+    expect(res.success).toBe(true);
+  });
+
+  it("validates immutable timeline event creation", () => {
+    const event = {
+      decisionId: "dec-123",
+      eventType: "STATUS_CHANGED" as const,
+      title: "Decision transitioned to MONITORING",
+      detail: "Deployed to production cluster; observation phase initiated.",
+    };
+
+    const res = CreateDecisionEventSchema.safeParse(event);
     expect(res.success).toBe(true);
   });
 });
