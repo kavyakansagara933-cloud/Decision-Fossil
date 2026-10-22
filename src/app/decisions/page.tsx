@@ -143,10 +143,15 @@ export default function DecisionsPage() {
           </p>
         </div>
 
-        <div>
-          <Button onClick={() => setIsModalOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Decision
+        <div className="flex items-center gap-2">
+          <Link href="/decisions/new">
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Decision Wizard
+            </Button>
+          </Link>
+          <Button onClick={() => setIsModalOpen(true)} variant="outline" className="text-xs">
+            Quick Add
           </Button>
         </div>
       </div>

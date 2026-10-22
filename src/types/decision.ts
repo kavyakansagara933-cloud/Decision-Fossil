@@ -88,6 +88,72 @@ export const CreateDecisionSchema = z.object({
 export type CreateDecisionInput = z.input<typeof CreateDecisionSchema>;
 export type CreateDecisionOutput = z.output<typeof CreateDecisionSchema>;
 
+// Multi-step Decision Creation Wizard schema
+export const CreateDecisionWizardSchema = z.object({
+  workspaceId: z.string().min(1, "Workspace is required"),
+  creatorId: z.string().optional(),
+  // Step 1 & 2: Basic info & reasoning
+  title: z.string().min(3, "Title must be at least 3 characters").max(200),
+  statement: z.string().min(10, "Decision statement must be at least 10 characters"),
+  priority: DecisionPrioritySchema.default("MEDIUM"),
+  status: DecisionStatusSchema.default("DRAFT"),
+  context: z.string().optional(),
+  reasoning: z.string().optional(),
+  reviewDate: z.string().optional().nullable(),
+  tags: z.array(z.string()).optional(),
+  // Step 3: Alternatives
+  alternatives: z
+    .array(
+      z.object({
+        name: z.string().min(1, "Alternative name is required"),
+        description: z.string().optional(),
+        pros: z.string().optional(),
+        cons: z.string().optional(),
+        selectionReason: z.string().optional(),
+        status: AlternativeStatusSchema.default("CONSIDERED"),
+        chosen: z.boolean().default(false),
+      })
+    )
+    .optional(),
+  // Step 4: Assumptions
+  assumptions: z
+    .array(
+      z.object({
+        statement: z.string().min(3, "Assumption statement is required"),
+        importance: DecisionPrioritySchema.default("MEDIUM"),
+        confidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("MEDIUM"),
+        status: AssumptionStatusSchema.default("UNVERIFIED"),
+        originalState: z.string().optional(),
+        impactNote: z.string().optional(),
+        reviewDate: z.string().optional().nullable(),
+      })
+    )
+    .optional(),
+  // Step 5: Evidence
+  evidence: z
+    .array(
+      z.object({
+        title: z.string().min(2, "Evidence title is required"),
+        type: EvidenceTypeSchema.default("NOTE"),
+        source: z.string().optional(),
+        description: z.string().optional(),
+        note: z.string().optional(),
+      })
+    )
+    .optional(),
+  // Step 6: Expected Outcome
+  outcome: z
+    .object({
+      expectedOutcome: z.string().min(3, "Expected outcome is required"),
+      actualOutcome: z.string().optional(),
+      status: OutcomeStatusSchema.default("PENDING"),
+      measurement: z.string().optional(),
+      notes: z.string().optional(),
+    })
+    .optional(),
+});
+export type CreateDecisionWizardInput = z.input<typeof CreateDecisionWizardSchema>;
+
 export const UpdateDecisionSchema = z.object({
   title: z.string().min(3).max(200).optional(),
   statement: z.string().min(10).optional(),
