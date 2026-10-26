@@ -17,6 +17,11 @@ export const DecisionPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL
 export type DecisionPriority = z.infer<typeof DecisionPrioritySchema>;
 
 export const AssumptionStatusSchema = z.enum([
+  "UNTESTED",
+  "SUPPORTED",
+  "CHALLENGED",
+  "INVALIDATED",
+  "CONFIRMED",
   "UNVERIFIED",
   "VALID",
   "QUESTIONABLE",
@@ -24,6 +29,9 @@ export const AssumptionStatusSchema = z.enum([
   "UNKNOWN",
 ]);
 export type AssumptionStatus = z.infer<typeof AssumptionStatusSchema>;
+
+export const EvidenceStanceSchema = z.enum(["SUPPORTS", "CONTRADICTS", "INCONCLUSIVE"]);
+export type EvidenceStance = z.infer<typeof EvidenceStanceSchema>;
 
 export const EvidenceTypeSchema = z.enum([
   "NOTE",
@@ -61,7 +69,10 @@ export const EventTypeSchema = z.enum([
   "VERSION_CREATED",
   "ALTERNATIVE_ADDED",
   "ASSUMPTION_ADDED",
+  "ASSUMPTION_UPDATED",
   "ASSUMPTION_STATUS_CHANGED",
+  "ASSUMPTION_EVIDENCE_LINKED",
+  "ASSUMPTION_EVIDENCE_UNLINKED",
   "EVIDENCE_ADDED",
   "OUTCOME_RECORDED",
   "REASSESSMENT_STARTED",
@@ -189,22 +200,58 @@ export const CreateAssumptionSchema = z.object({
   decisionId: z.string().min(1),
   workspaceId: z.string().optional(),
   statement: z.string().min(5, "Assumption statement is required"),
+  explanation: z.string().optional(),
   importance: DecisionPrioritySchema.default("MEDIUM"),
   confidence: z.enum(["LOW", "MEDIUM", "HIGH"]).default("MEDIUM"),
-  status: AssumptionStatusSchema.default("UNVERIFIED"),
+  status: AssumptionStatusSchema.default("UNTESTED"),
+  ownerId: z.string().optional().nullable(),
+  reviewDate: z.string().datetime().optional().nullable(),
+  validationNotes: z.string().optional(),
+  source: z.enum(["USER", "AI_EXTRACTED", "IMPORTED"]).default("USER"),
+  sourceExcerpt: z.string().optional(),
   originalState: z.string().optional(),
   impactNote: z.string().optional(),
   evidenceIds: z.array(z.string()).optional(),
+  evidenceLinks: z
+    .array(
+      z.object({
+        evidenceId: z.string(),
+        stance: EvidenceStanceSchema.default("SUPPORTS"),
+        note: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 export type CreateAssumptionInput = z.input<typeof CreateAssumptionSchema>;
 
-export const ValidateAssumptionSchema = z.object({
-  newStatus: AssumptionStatusSchema,
-  currentState: z.string().min(3, "Observed state is required"),
-  reason: z.string().min(3, "Validation reason is required"),
+export const UpdateAssumptionSchema = z.object({
+  statement: z.string().min(5).optional(),
+  explanation: z.string().optional(),
+  importance: DecisionPrioritySchema.optional(),
+  confidence: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  ownerId: z.string().optional().nullable(),
+  reviewDate: z.string().datetime().optional().nullable(),
+  validationNotes: z.string().optional(),
   actorId: z.string().optional(),
 });
+export type UpdateAssumptionInput = z.infer<typeof UpdateAssumptionSchema>;
+
+export const ValidateAssumptionSchema = z.object({
+  newStatus: AssumptionStatusSchema,
+  currentState: z.string().min(3, "Observed state / explanation is required"),
+  reason: z.string().min(3, "Validation reason is required"),
+  actorId: z.string().optional(),
+  evidenceRefs: z.array(z.string()).optional(),
+});
 export type ValidateAssumptionInput = z.infer<typeof ValidateAssumptionSchema>;
+
+export const LinkEvidenceAssumptionSchema = z.object({
+  evidenceId: z.string().min(1, "Evidence ID is required"),
+  stance: EvidenceStanceSchema.default("SUPPORTS"),
+  note: z.string().optional(),
+  actorId: z.string().optional(),
+});
+export type LinkEvidenceAssumptionInput = z.infer<typeof LinkEvidenceAssumptionSchema>;
 
 export const CreateEvidenceSchema = z.object({
   decisionId: z.string().min(1),
