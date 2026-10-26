@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { AssumptionService } from "./assumption-service";
 import {
   CreateDecisionInput,
   UpdateDecisionInput,
@@ -313,107 +314,19 @@ export class DecisionService {
    * Add Assumption with linkage and optional evidence connections
    */
   static async addAssumption(input: CreateAssumptionInput) {
-    return await prisma.$transaction(async (tx) => {
-      const assumption = await tx.assumption.create({
-        data: {
-          workspaceId: input.workspaceId,
-          statement: input.statement,
-          importance: input.importance,
-          confidence: input.confidence,
-          status: input.status,
-          originalState: input.originalState || input.statement,
-          currentState: input.originalState || input.statement,
-        },
-      });
-
-      const link = await tx.decisionAssumption.create({
-        data: {
-          decisionId: input.decisionId,
-          assumptionId: assumption.id,
-          impactNote: input.impactNote,
-        },
-      });
-
-      // Link any existing evidence items supporting this assumption
-      if (input.evidenceIds && input.evidenceIds.length > 0) {
-        for (const evidenceId of input.evidenceIds) {
-          await tx.evidenceAssumption.create({
-            data: {
-              evidenceId,
-              assumptionId: assumption.id,
-            },
-          });
-        }
-      }
-
-      await tx.decisionEvent.create({
-        data: {
-          decisionId: input.decisionId,
-          eventType: "ASSUMPTION_ADDED",
-          title: `Assumption captured: ${input.statement}`,
-          detail: input.impactNote || null,
-        },
-      });
-
-      return { assumption, link };
-    });
+    const { assumption, decisionLink } = await AssumptionService.createAssumption(input);
+    return { assumption, link: decisionLink };
   }
 
   /**
    * Reassess / Validate an Assumption without overwriting original historical state
    */
-  static async validateAssumption(assumptionId: string, decisionId: string, input: ValidateAssumptionInput) {
-    return await prisma.$transaction(async (tx) => {
-      const assumption = await tx.assumption.findUnique({
-        where: { id: assumptionId },
-      });
-      if (!assumption) throw new Error("Assumption not found");
-
-      const previousStatus = assumption.status;
-      const previousState = assumption.currentState;
-
-      // Update current state and timestamps
-      const updated = await tx.assumption.update({
-        where: { id: assumptionId },
-        data: {
-          status: input.newStatus,
-          currentState: input.currentState,
-          validatedAt: input.newStatus === "VALID" ? new Date() : assumption.validatedAt,
-          invalidatedAt: input.newStatus === "INVALID" ? new Date() : assumption.invalidatedAt,
-        },
-      });
-
-      // Crucial: Append to validation history (historical preservation!)
-      const history = await tx.assumptionValidationHistory.create({
-        data: {
-          assumptionId,
-          previousStatus,
-          newStatus: input.newStatus,
-          previousState,
-          newState: input.currentState,
-          reason: input.reason,
-          actorId: input.actorId || null,
-        },
-      });
-
-      // Record decision event
-      await tx.decisionEvent.create({
-        data: {
-          decisionId,
-          actorId: input.actorId || null,
-          eventType: "ASSUMPTION_STATUS_CHANGED",
-          title: `Assumption reassessed: ${input.newStatus}`,
-          detail: `Reason: ${input.reason} (Observed: ${input.currentState})`,
-          metadata: JSON.stringify({
-            assumptionId,
-            previousStatus,
-            newStatus: input.newStatus,
-          }),
-        },
-      });
-
-      return { updated, history };
-    });
+  static async validateAssumption(
+    assumptionId: string,
+    decisionId: string,
+    input: ValidateAssumptionInput
+  ) {
+    return await AssumptionService.validateAssumption(assumptionId, decisionId, input);
   }
 
   /**
