@@ -30,6 +30,7 @@ model User {
   comments      Comment[]
   events        DecisionEvent[]   @relation("EventActor")
   validations   AssumptionValidationHistory[] @relation("ValidationActor")
+  ownedAssumptions Assumption[]   @relation("AssumptionOwner")
 
   @@map("users")
 }
@@ -180,25 +181,35 @@ model Alternative {
 
 // ─── Assumptions ───────────────────────────────────────────────────────────────
 model Assumption {
-  id            String    @id @default(cuid())
-  workspaceId   String?
-  statement     String    // What we assume to be true
-  importance    String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
-  confidence    String    @default("MEDIUM") // LOW, MEDIUM, HIGH
-  status        String    @default("UNVERIFIED") // UNVERIFIED, VALID, QUESTIONABLE, INVALID, UNKNOWN
-  originalState String?   // Initial assumption state / statement at creation
-  currentState  String?   // Current observed state of this assumption
-  reviewDate    DateTime?
-  validatedAt   DateTime?
-  invalidatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  workspaceId     String?
+  statement       String    // What we assume to be true
+  explanation     String?   // Why this assumption matters
+  importance      String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  confidence      String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+  status          String    @default("UNTESTED") // UNTESTED, SUPPORTED, CHALLENGED, INVALIDATED, CONFIRMED (also UNVERIFIED, VALID, QUESTIONABLE, INVALID)
+  ownerId         String?
+  source          String    @default("USER") // USER, AI_EXTRACTED, IMPORTED
+  sourceExcerpt   String?   // Supporting excerpt if extracted from notes
+  validationNotes String?   // Latest validation notes / rationale
+  originalState   String?   // Initial assumption state / statement at creation
+  currentState    String?   // Current observed state of this assumption
+  reviewDate      DateTime?
+  validatedAt     DateTime?
+  invalidatedAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   workspace     Workspace?                     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  owner         User?                          @relation("AssumptionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   decisions     DecisionAssumption[]
   evidenceLinks EvidenceAssumption[]
   history       AssumptionValidationHistory[]
 
+  @@index([workspaceId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([reviewDate])
   @@map("assumptions")
 }
 
@@ -212,12 +223,14 @@ model AssumptionValidationHistory {
   newState       String?
   reason         String?  // Why this status changed
   actorId        String?
+  evidenceRefs   String?  // JSON string or comma-separated list of evidence IDs evaluated
   validatedAt    DateTime @default(now())
 
   assumption Assumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
   actor      User?      @relation("ValidationActor", fields: [actorId], references: [id])
 
   @@index([assumptionId])
+  @@index([actorId])
   @@map("assumption_validation_histories")
 }
 
@@ -268,11 +281,12 @@ model DecisionEvidence {
   @@map("decision_evidence")
 }
 
-// Connects Evidence to Assumptions (evidence supporting assumptions)
+// Connects Evidence to Assumptions (evidence supporting/challenging assumptions)
 model EvidenceAssumption {
   id           String   @id @default(cuid())
   evidenceId   String
   assumptionId String
+  stance       String   @default("SUPPORTS") // SUPPORTS, CONTRADICTS, INCONCLUSIVE
   note         String?
   addedAt      DateTime @default(now())
 
@@ -280,6 +294,8 @@ model EvidenceAssumption {
   assumption Assumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
 
   @@unique([evidenceId, assumptionId])
+  @@index([assumptionId])
+  @@index([evidenceId])
   @@map("evidence_assumptions")
 }
 
