@@ -74,12 +74,47 @@ export class MockAIProvider implements AIProvider {
 
     // 4. Identify Alternatives
     const alternatives: any[] = [];
+    let altId = 1;
+
+    // Check for section-based alternatives (e.g. Alternatives: \n 1. Option A ...)
+    let inAltSection = false;
+    for (const l of lines) {
+      const trimmed = l.trim();
+      if (/^(?:#+\s*)?(?:alternatives?|options?|considered options?)\s*[:\-]?\s*$/i.test(trimmed)) {
+        inAltSection = true;
+        continue;
+      }
+      if (inAltSection) {
+        if (/^(?:#+\s*)?(?:assumptions?|evidence?|risks?|outcome|decision|problem|context)/i.test(trimmed)) {
+          inAltSection = false;
+        } else if (/^[-*•0-9.)\s]+[A-Za-z0-9]/.test(trimmed)) {
+          const cleanLine = trimmed.replace(/^[-*•0-9.)\s]+/, "").trim();
+          const parts = cleanLine.split(/[:\-–—]/);
+          const name = parts[0].trim();
+          const desc = parts.slice(1).join(":").trim() || "Considered alternative from source discussion.";
+          const isChosen = /selected|chosen|adopted|accepted|winner/i.test(cleanLine);
+          alternatives.push({
+            id: `alt-${altId++}`,
+            name: name.slice(0, 50),
+            description: desc,
+            pros: isChosen ? "Primary recommended solution in discussion" : undefined,
+            cons: !isChosen ? "Trade-offs or overhead noted in notes" : undefined,
+            status: isChosen ? "SELECTED" : "CONSIDERED",
+            chosen: isChosen,
+            sourceExcerpt: l,
+            traceability: "EXPLICIT",
+            confidence: 0.9,
+          });
+        }
+      }
+    }
+
+    // Also scan for inline alternatives (e.g., "instead of memcached", "alternative: X")
     const altRegex = /(?:alternative|considered|evaluated|vs\.?|option|instead of|compared to)\s*[:\-]?\s*([^.,;\n]+)/gi;
     let altMatch;
-    let altId = 1;
     while ((altMatch = altRegex.exec(fullText)) !== null) {
       const candidateName = altMatch[1].trim();
-      if (candidateName.length > 2 && candidateName.length < 50) {
+      if (candidateName.length > 2 && candidateName.length < 50 && !alternatives.some((a) => a.name.toLowerCase() === candidateName.toLowerCase())) {
         alternatives.push({
           id: `alt-${altId++}`,
           name: candidateName,
@@ -92,7 +127,8 @@ export class MockAIProvider implements AIProvider {
         });
       }
     }
-    // Fallback alternative if none found via regex but keywords exist
+
+    // Fallback alternative if none found
     if (alternatives.length === 0) {
       const altLine = lines.find((l) => /alternatives?|options?/i.test(l));
       if (altLine) {
@@ -107,6 +143,14 @@ export class MockAIProvider implements AIProvider {
           confidence: 0.8,
         });
       }
+    }
+
+    // Ensure at least one alternative is marked chosen if matching statement
+    if (!alternatives.some((a) => a.chosen) && alternatives.length > 0) {
+      const statementLower = statement.toLowerCase();
+      const bestMatch = alternatives.find((a) => statementLower.includes(a.name.toLowerCase())) || alternatives[0];
+      bestMatch.chosen = true;
+      bestMatch.status = "SELECTED";
     }
 
     // 5. Identify Assumptions
@@ -127,6 +171,21 @@ export class MockAIProvider implements AIProvider {
         });
       }
     });
+
+    // Fallback assumption if none explicitly articulated
+    if (assumptions.length === 0) {
+      assumptions.push({
+        id: "assump-1",
+        statement: `Current architectural constraints and operational demands remain within expected parameters.`,
+        importance: "MEDIUM",
+        confidence: "MEDIUM",
+        originalState: "Inferred operational baseline stability.",
+        impactNote: "System requirements are assumed to remain consistent over the decision lifecycle.",
+        sourceExcerpt: fullText.slice(0, 100),
+        traceability: "INFERRED",
+        confidenceScore: 0.75,
+      });
+    }
 
     // 6. Identify Evidence (URLs, benchmarks, telemetry)
     const evidence: any[] = [];
