@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { GitBranch, Shield, Compass, BookOpen, Layers } from "lucide-react";
+import { GitBranch, Shield, Compass, BookOpen, Layers, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const Navigation: React.FC = () => {
@@ -31,6 +31,13 @@ export const Navigation: React.FC = () => {
               className="hover:text-zinc-950 dark:hover:text-zinc-100 transition-colors"
             >
               Decisions
+            </Link>
+            <Link
+              href="/decisions/extract"
+              className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>AI Extract</span>
             </Link>
             <Link
               href="/settings"

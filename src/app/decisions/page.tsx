@@ -144,6 +144,15 @@ export default function DecisionsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Link href="/decisions/extract">
+            <Button
+              variant="outline"
+              className="gap-2 border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/40"
+            >
+              <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              AI Extract
+            </Button>
+          </Link>
           <Link href="/decisions/new">
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
