@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { WorkspaceService } from "@/services/workspace-service";
+import { AssumptionService } from "@/services/assumption-service";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import {
   Plus,
   Scale,
   Sparkles,
+  Calendar,
 } from "lucide-react";
 
 export default async function DashboardPage() {
@@ -51,6 +53,13 @@ export default async function DashboardPage() {
 
   const invalidAssumptionsCount = await prisma.assumption.count({
     where: { status: "INVALID" },
+  });
+
+  // Assumption Intelligence & Review Stats
+  const assumptionStats = await AssumptionService.getAssumptionStats(workspace.id);
+  const overdueAssumptions = await AssumptionService.listAssumptions({
+    workspaceId: workspace.id,
+    isOverdue: true,
   });
 
   // Decisions needing immediate attention
@@ -254,6 +263,85 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Assumption Intelligence & Review Summary */}
+      <div className="mt-8 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 font-mono uppercase flex items-center gap-2">
+              <Scale className="h-4 w-4 text-indigo-500" />
+              Assumption Intelligence &amp; Review Health
+            </h3>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Tracks whether foundational hypotheses across all architecture fossils remain supported by empirical evidence.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+            <span className="px-2.5 py-1 rounded-md bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
+              Total: <strong>{assumptionStats.total}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+              Untested: <strong>{assumptionStats.untested}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              Supported: <strong>{assumptionStats.supported + assumptionStats.confirmed}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+              Challenged: <strong>{assumptionStats.challenged}</strong>
+            </span>
+            <span className="px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+              Invalidated: <strong>{assumptionStats.invalidated}</strong>
+            </span>
+            {assumptionStats.overdue > 0 && (
+              <span className="px-2.5 py-1 rounded-md bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 font-semibold border border-rose-300 dark:border-rose-800 animate-pulse">
+                Overdue: {assumptionStats.overdue}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {overdueAssumptions.length > 0 ? (
+          <div className="space-y-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+            <h4 className="text-xs font-semibold text-rose-700 dark:text-rose-400 font-mono uppercase flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" /> Assumptions Past Review Deadline ({overdueAssumptions.length})
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {overdueAssumptions.slice(0, 4).map((a: any) => {
+                const targetDecision = a.decisions?.[0]?.decision;
+                return (
+                  <div
+                    key={a.id}
+                    className="p-3 rounded-lg bg-white dark:bg-zinc-950 border border-rose-200 dark:border-rose-900/40 flex items-start justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-1">{a.statement}</p>
+                      {targetDecision && (
+                        <p className="text-[11px] text-zinc-500 font-mono">
+                          Decision: <span className="font-medium">{targetDecision.title}</span>
+                        </p>
+                      )}
+                      <p className="text-[10px] text-rose-600 dark:text-rose-400 font-mono">
+                        Deadline: {a.reviewDate ? new Date(a.reviewDate).toLocaleDateString() : "Immediate"}
+                      </p>
+                    </div>
+                    {targetDecision && (
+                      <Link href={`/decisions/${targetDecision.id}`}>
+                        <Button size="sm" variant="outline" className="h-7 text-[11px] px-2 shrink-0">
+                          Review
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            ✓ All assumption reviews are currently up to date. No overdue deadlines.
+          </p>
+        )}
+      </div>
 
       {/* Main Content Grid: Recent Decisions & Audit Timeline */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
