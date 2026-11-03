@@ -187,6 +187,9 @@ export class DecisionService {
           include: {
             assumption: {
               include: {
+                owner: {
+                  select: { id: true, name: true, email: true },
+                },
                 evidenceLinks: {
                   include: {
                     evidence: true,

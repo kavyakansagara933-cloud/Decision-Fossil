@@ -25,6 +25,9 @@ import {
   ArrowRight,
   TrendingUp,
   Scale,
+  Link2,
+  Unlink,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,9 +65,10 @@ export default function DecisionDetailPage() {
 
   // 3. Assumption Reassessment
   const [selectedAssumption, setSelectedAssumption] = useState<any>(null);
-  const [reassessStatus, setReassessStatus] = useState("VALID");
+  const [reassessStatus, setReassessStatus] = useState("SUPPORTED");
   const [reassessState, setReassessState] = useState("");
   const [reassessReason, setReassessReason] = useState("");
+  const [reassessEvidenceRefs, setReassessEvidenceRefs] = useState<string[]>([]);
   const [isSubmittingReassess, setIsSubmittingReassess] = useState(false);
 
   // 4. Quick Add Alternative
@@ -80,10 +84,20 @@ export default function DecisionDetailPage() {
   // 5. Quick Add Assumption
   const [isAddAssumpOpen, setIsAddAssumpOpen] = useState(false);
   const [assumpStatement, setAssumpStatement] = useState("");
+  const [assumpExplanation, setAssumpExplanation] = useState("");
   const [assumpImportance, setAssumpImportance] = useState("MEDIUM");
   const [assumpConfidence, setAssumpConfidence] = useState("MEDIUM");
   const [assumpImpactNote, setAssumpImpactNote] = useState("");
+  const [assumpReviewDate, setAssumpReviewDate] = useState("");
   const [isSubmittingAssump, setIsSubmittingAssump] = useState(false);
+
+  // Link Evidence to Assumption Modal
+  const [isLinkEvidenceOpen, setIsLinkEvidenceOpen] = useState(false);
+  const [targetAssumptionForEvidence, setTargetAssumptionForEvidence] = useState<any>(null);
+  const [chosenEvidenceId, setChosenEvidenceId] = useState("");
+  const [chosenEvidenceStance, setChosenEvidenceStance] = useState<"SUPPORTS" | "CONTRADICTS" | "INCONCLUSIVE">("SUPPORTS");
+  const [chosenEvidenceNote, setChosenEvidenceNote] = useState("");
+  const [isSubmittingLinkEv, setIsSubmittingLinkEv] = useState(false);
 
   // 6. Quick Add Evidence
   const [isAddEvidenceOpen, setIsAddEvidenceOpen] = useState(false);
@@ -224,6 +238,7 @@ export default function DecisionDetailPage() {
           newStatus: reassessStatus,
           currentState: reassessState,
           reason: reassessReason,
+          evidenceRefs: reassessEvidenceRefs,
         }),
       });
       const data = await res.json();
@@ -240,11 +255,71 @@ export default function DecisionDetailPage() {
       setSelectedAssumption(null);
       setReassessState("");
       setReassessReason("");
+      setReassessEvidenceRefs([]);
       fetchDecision();
     } catch (err: any) {
       toast({ type: "error", title: "Reassessment Failed", message: err.message });
     } finally {
       setIsSubmittingReassess(false);
+    }
+  };
+
+  // ─── Link Evidence to Assumption ─────────────────────────────────────────
+  const handleLinkEvidenceToAssumption = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetAssumptionForEvidence || !chosenEvidenceId) return;
+
+    try {
+      setIsSubmittingLinkEv(true);
+      const res = await fetch(`/api/assumptions/${targetAssumptionForEvidence.id}/evidence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evidenceId: chosenEvidenceId,
+          stance: chosenEvidenceStance,
+          note: chosenEvidenceNote || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to link evidence to assumption");
+      }
+
+      toast({
+        type: "success",
+        title: "Evidence Linked",
+        message: `Linked evidence with ${chosenEvidenceStance} stance.`,
+      });
+
+      setIsLinkEvidenceOpen(false);
+      setTargetAssumptionForEvidence(null);
+      setChosenEvidenceId("");
+      setChosenEvidenceNote("");
+      fetchDecision();
+    } catch (err: any) {
+      toast({ type: "error", title: "Linking Failed", message: err.message });
+    } finally {
+      setIsSubmittingLinkEv(false);
+    }
+  };
+
+  const handleUnlinkEvidenceFromAssumption = async (assumptionId: string, evidenceId: string) => {
+    try {
+      const res = await fetch(`/api/assumptions/${assumptionId}/evidence?evidenceId=${evidenceId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to unlink evidence");
+      }
+      toast({
+        type: "success",
+        title: "Evidence Unlinked",
+        message: "Removed evidence link from assumption.",
+      });
+      fetchDecision();
+    } catch (err: any) {
+      toast({ type: "error", title: "Unlink Failed", message: err.message });
     }
   };
 
@@ -298,10 +373,12 @@ export default function DecisionDetailPage() {
         body: JSON.stringify({
           entityType: "ASSUMPTION",
           statement: assumpStatement,
+          explanation: assumpExplanation || undefined,
           importance: assumpImportance,
           confidence: assumpConfidence,
-          status: "UNVERIFIED",
-          impactNote: assumpImpactNote,
+          status: "UNTESTED",
+          impactNote: assumpImpactNote || undefined,
+          reviewDate: assumpReviewDate ? new Date(assumpReviewDate).toISOString() : undefined,
         }),
       });
       const data = await res.json();
@@ -312,7 +389,9 @@ export default function DecisionDetailPage() {
       toast({ type: "success", title: "Assumption Preserved", message: "Recorded assumption hypothesis." });
       setIsAddAssumpOpen(false);
       setAssumpStatement("");
+      setAssumpExplanation("");
       setAssumpImpactNote("");
+      setAssumpReviewDate("");
       fetchDecision();
     } catch (err: any) {
       toast({ type: "error", title: "Action Failed", message: err.message });
@@ -633,95 +712,240 @@ export default function DecisionDetailPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {decision.assumptions.map(({ assumption }: any) => (
-                  <div
-                    key={assumption.id}
-                    className="p-4 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm">{assumption.statement}</span>
-                        <Badge
-                          variant={
-                            assumption.status === "VALID"
-                              ? "success"
-                              : assumption.status === "INVALID"
-                              ? "destructive"
-                              : "warning"
-                          }
-                          size="sm"
-                        >
-                          {assumption.status}
-                        </Badge>
-                        <Badge variant="outline" size="sm">
-                          Confidence: {assumption.confidence}
-                        </Badge>
-                      </div>
+                {decision.assumptions.map(({ assumption }: any) => {
+                  const now = new Date();
+                  const isResolved = ["CONFIRMED", "VALID", "INVALIDATED", "INVALID"].includes(assumption.status);
+                  const isOverdue = Boolean(assumption.reviewDate && new Date(assumption.reviewDate) < now && !isResolved);
 
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs h-7 gap-1"
-                        onClick={() => {
-                          setSelectedAssumption(assumption);
-                          setReassessState(assumption.currentState || "");
-                        }}
-                      >
-                        <Scale className="h-3 w-3" /> Reassess Status
-                      </Button>
-                    </div>
+                  const supportingLinks = assumption.evidenceLinks?.filter((l: any) => l.stance === "SUPPORTS" || !l.stance) || [];
+                  const contradictingLinks = assumption.evidenceLinks?.filter((l: any) => l.stance === "CONTRADICTS") || [];
+                  const inconclusiveLinks = assumption.evidenceLinks?.filter((l: any) => l.stance === "INCONCLUSIVE") || [];
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-zinc-500 font-mono">
-                      <div>Baseline State: {assumption.originalState}</div>
-                      <div>Current Observed: {assumption.currentState}</div>
-                    </div>
+                  const getStatusVariant = (st: string) => {
+                    if (["CONFIRMED", "VALID", "SUPPORTED"].includes(st)) return "success";
+                    if (["INVALIDATED", "INVALID"].includes(st)) return "destructive";
+                    if (["CHALLENGED", "QUESTIONABLE"].includes(st)) return "warning";
+                    return "neutral";
+                  };
 
-                    {/* Linked Evidence to this assumption */}
-                    {assumption.evidenceLinks?.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-                        <span className="text-zinc-400 font-mono">Supporting Evidence:</span>
-                        {assumption.evidenceLinks.map(({ evidence }: any) => (
-                          <span
-                            key={evidence.id}
-                            className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono text-[10px] text-zinc-600 dark:text-zinc-300"
+                  return (
+                    <div
+                      key={assumption.id}
+                      className={`p-4 rounded-lg bg-white dark:bg-zinc-900 border space-y-3 transition-colors ${
+                        isOverdue
+                          ? "border-rose-300 dark:border-rose-900/60 shadow-xs shadow-rose-500/10"
+                          : "border-zinc-200 dark:border-zinc-800"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="space-y-1 max-w-2xl">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
+                              {assumption.statement}
+                            </span>
+                            <Badge variant={getStatusVariant(assumption.status)} size="sm">
+                              {assumption.status}
+                            </Badge>
+                            <Badge variant="outline" size="sm">
+                              Importance: {assumption.importance}
+                            </Badge>
+                            <Badge variant="outline" size="sm">
+                              Confidence: {assumption.confidence}
+                            </Badge>
+
+                            {isOverdue && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse">
+                                <AlertTriangle className="h-3 w-3" /> Overdue Review (
+                                {new Date(assumption.reviewDate).toLocaleDateString()})
+                              </span>
+                            )}
+                          </div>
+
+                          {assumption.explanation && (
+                            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                              {assumption.explanation}
+                            </p>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-4 pt-1 text-[11px] font-mono text-zinc-500">
+                            {assumption.owner && (
+                              <span className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+                                <User className="h-3 w-3" /> {assumption.owner.name || assumption.owner.email}
+                              </span>
+                            )}
+                            {assumption.reviewDate && !isOverdue && (
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar className="h-3 w-3" /> Review Due:{" "}
+                                {new Date(assumption.reviewDate).toLocaleDateString()}
+                              </span>
+                            )}
+                            {assumption.source && assumption.source !== "USER" && (
+                              <span className="px-1.5 py-0.2 rounded bg-zinc-100 dark:bg-zinc-800 text-[10px]">
+                                Source: {assumption.source}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 gap-1"
+                            onClick={() => {
+                              setTargetAssumptionForEvidence(assumption);
+                              setIsLinkEvidenceOpen(true);
+                            }}
                           >
-                            {evidence.title}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Historical Validation Trail */}
-                    {assumption.history && assumption.history.length > 0 && (
-                      <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3">
-                        <h5 className="text-[11px] font-mono font-semibold text-zinc-400 mb-2 uppercase flex items-center gap-1.5">
-                          <History className="h-3 w-3" />
-                          Non-Destructive Validation Trail ({assumption.history.length})
-                        </h5>
-                        <div className="space-y-2">
-                          {assumption.history.map((h: any) => (
-                            <div
-                              key={h.id}
-                              className="text-xs p-2.5 rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 space-y-1"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-                                  {h.previousStatus} → {h.newStatus}
-                                </span>
-                                <span className="text-[10px] text-zinc-400 font-mono">
-                                  {new Date(h.validatedAt).toLocaleDateString()}
-                                </span>
-                              </div>
-                              <p className="text-zinc-600 dark:text-zinc-400 text-[11px]">
-                                {h.reason}
-                              </p>
-                            </div>
-                          ))}
+                            <Link2 className="h-3 w-3" /> Link Evidence
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 gap-1"
+                            onClick={() => {
+                              setSelectedAssumption(assumption);
+                              setReassessStatus(
+                                ["UNTESTED", "UNVERIFIED"].includes(assumption.status)
+                                  ? "SUPPORTED"
+                                  : assumption.status
+                              );
+                              setReassessState(assumption.currentState || "");
+                              setReassessEvidenceRefs([]);
+                            }}
+                          >
+                            <Scale className="h-3 w-3" /> Reassess Status
+                          </Button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-zinc-500 font-mono bg-zinc-50 dark:bg-zinc-950 p-2 rounded">
+                        <div>Baseline State: {assumption.originalState}</div>
+                        <div>Current Observed: {assumption.currentState || "Pending initial validation"}</div>
+                      </div>
+
+                      {/* Evidence by Stance: Supporting, Contradicting, Inconclusive */}
+                      <div className="space-y-2 pt-1">
+                        {supportingLinks.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="text-emerald-700 dark:text-emerald-400 font-semibold font-mono text-[10px] uppercase">
+                              Supporting ({supportingLinks.length}):
+                            </span>
+                            {supportingLinks.map((link: any) => (
+                              <span
+                                key={link.id || link.evidence.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px]"
+                              >
+                                <span>{link.evidence?.title || "Evidence"}</span>
+                                {link.note && <span className="text-[10px] opacity-75">({link.note})</span>}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkEvidenceFromAssumption(assumption.id, link.evidence.id)}
+                                  className="text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-100 ml-1"
+                                  title="Unlink evidence"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {contradictingLinks.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="text-rose-700 dark:text-rose-400 font-semibold font-mono text-[10px] uppercase">
+                              Contradicting ({contradictingLinks.length}):
+                            </span>
+                            {contradictingLinks.map((link: any) => (
+                              <span
+                                key={link.id || link.evidence.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px]"
+                              >
+                                <span>{link.evidence?.title || "Evidence"}</span>
+                                {link.note && <span className="text-[10px] opacity-75">({link.note})</span>}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkEvidenceFromAssumption(assumption.id, link.evidence.id)}
+                                  className="text-rose-600 hover:text-rose-900 dark:hover:text-rose-100 ml-1"
+                                  title="Unlink evidence"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {inconclusiveLinks.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="text-amber-700 dark:text-amber-400 font-semibold font-mono text-[10px] uppercase">
+                              Inconclusive ({inconclusiveLinks.length}):
+                            </span>
+                            {inconclusiveLinks.map((link: any) => (
+                              <span
+                                key={link.id || link.evidence.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px]"
+                              >
+                                <span>{link.evidence?.title || "Evidence"}</span>
+                                {link.note && <span className="text-[10px] opacity-75">({link.note})</span>}
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkEvidenceFromAssumption(assumption.id, link.evidence.id)}
+                                  className="text-amber-600 hover:text-amber-900 dark:hover:text-amber-100 ml-1"
+                                  title="Unlink evidence"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Historical Validation Trail */}
+                      {assumption.history && assumption.history.length > 0 && (
+                        <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3">
+                          <h5 className="text-[11px] font-mono font-semibold text-zinc-400 mb-2 uppercase flex items-center gap-1.5">
+                            <History className="h-3 w-3" />
+                            Non-Destructive Validation Trail ({assumption.history.length})
+                          </h5>
+                          <div className="space-y-2">
+                            {assumption.history.map((h: any) => (
+                              <div
+                                key={h.id}
+                                className="text-xs p-2.5 rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 space-y-1"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                                      {h.previousStatus} → {h.newStatus}
+                                    </span>
+                                    {h.actor && (
+                                      <span className="text-[10px] text-zinc-400">
+                                        by {h.actor.name || h.actor.email}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-zinc-400 font-mono">
+                                    {new Date(h.validatedAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <p className="text-zinc-600 dark:text-zinc-400 text-[11px]">
+                                  {h.reason}
+                                </p>
+                                {h.evidenceRefs && (
+                                  <div className="text-[10px] font-mono text-zinc-400">
+                                    Cited evidence count: {JSON.parse(h.evidenceRefs)?.length || 0}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1001,7 +1225,7 @@ export default function DecisionDetailPage() {
       {/* Modal 3: Assumption Reassessment */}
       {selectedAssumption && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-lg rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-semibold">Reassess Assumption</h3>
             <p className="text-xs text-zinc-500 mt-1">
               Preserve reassessment history non-destructively: &ldquo;{selectedAssumption.statement}&rdquo;
@@ -1015,10 +1239,11 @@ export default function DecisionDetailPage() {
                   onChange={(e) => setReassessStatus(e.target.value)}
                   className="w-full h-9 rounded-md border border-zinc-300 dark:border-zinc-800 bg-transparent px-3 text-xs"
                 >
-                  <option value="VALID">Valid (Still Holds)</option>
-                  <option value="QUESTIONABLE">Questionable (Drifting)</option>
-                  <option value="INVALID">Invalid (No Longer True)</option>
-                  <option value="UNKNOWN">Unknown</option>
+                  <option value="SUPPORTED">SUPPORTED — Evidence aligns with assumption</option>
+                  <option value="CHALLENGED">CHALLENGED — Evidence raises doubt or friction</option>
+                  <option value="INVALIDATED">INVALIDATED — Evidence contradicts / proves false</option>
+                  <option value="CONFIRMED">CONFIRMED — Fully validated by criteria</option>
+                  <option value="UNTESTED">UNTESTED — Preliminary / not yet validated</option>
                 </select>
               </div>
 
@@ -1037,11 +1262,44 @@ export default function DecisionDetailPage() {
                 <Textarea
                   value={reassessReason}
                   onChange={(e) => setReassessReason(e.target.value)}
-                  placeholder="Why is this status updated? What telemetry or metrics led to this conclusion?"
+                  placeholder="Why is this status updated? What metrics, telemetry, or findings led to this conclusion?"
                   rows={3}
                   required
                 />
               </div>
+
+              {/* Cited Evidence References */}
+              {decision.evidence && decision.evidence.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                  <label className="text-xs font-medium">Cite Supporting/Contradicting Evidence</label>
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                    {decision.evidence.map(({ evidence }: any) => {
+                      const isChecked = reassessEvidenceRefs.includes(evidence.id);
+                      return (
+                        <label
+                          key={evidence.id}
+                          className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setReassessEvidenceRefs((prev) => [...prev, evidence.id]);
+                              } else {
+                                setReassessEvidenceRefs((prev) => prev.filter((id) => id !== evidence.id));
+                              }
+                            }}
+                            className="rounded border-zinc-300 dark:border-zinc-700"
+                          />
+                          <span className="truncate">{evidence.title}</span>
+                          <span className="text-[10px] text-zinc-400 font-mono">({evidence.type})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                 <Button type="button" variant="outline" size="sm" onClick={() => setSelectedAssumption(null)}>
@@ -1106,8 +1364,11 @@ export default function DecisionDetailPage() {
       {/* Modal 5: Add Assumption */}
       {isAddAssumpOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-xl">
+          <div className="w-full max-w-lg rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-semibold">Record New Assumption</h3>
+            <p className="text-xs text-zinc-500 mt-1">
+              Capture operational premises and hypotheses critical to this decision.
+            </p>
             <form onSubmit={handleAddAssumption} className="space-y-3 mt-4">
               <div className="space-y-1">
                 <label className="text-xs font-medium">Assumption Statement</label>
@@ -1118,6 +1379,17 @@ export default function DecisionDetailPage() {
                   required
                 />
               </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Why does this matter? (Explanation)</label>
+                <Textarea
+                  value={assumpExplanation}
+                  onChange={(e) => setAssumpExplanation(e.target.value)}
+                  placeholder="Explain the consequence to this architectural choice if this assumption fails..."
+                  rows={2}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Importance</label>
@@ -1133,7 +1405,7 @@ export default function DecisionDetailPage() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Confidence</label>
+                  <label className="text-xs font-medium">Initial Confidence</label>
                   <select
                     value={assumpConfidence}
                     onChange={(e) => setAssumpConfidence(e.target.value)}
@@ -1145,20 +1417,114 @@ export default function DecisionDetailPage() {
                   </select>
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Impact Note</label>
-                <Input
-                  value={assumpImpactNote}
-                  onChange={(e) => setAssumpImpactNote(e.target.value)}
-                  placeholder="What happens if this assumption is falsified?"
-                />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Review Date Deadline</label>
+                  <Input
+                    type="date"
+                    value={assumpReviewDate}
+                    onChange={(e) => setAssumpReviewDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Impact Note</label>
+                  <Input
+                    value={assumpImpactNote}
+                    onChange={(e) => setAssumpImpactNote(e.target.value)}
+                    placeholder="Specific failure impact"
+                  />
+                </div>
               </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                 <Button type="button" variant="outline" size="sm" onClick={() => setIsAddAssumpOpen(false)}>
                   Cancel
                 </Button>
                 <Button type="submit" size="sm" isLoading={isSubmittingAssump}>
                   Preserve Assumption
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Link Evidence to Assumption */}
+      {isLinkEvidenceOpen && targetAssumptionForEvidence && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-base font-semibold">Link Evidence to Assumption</h3>
+            <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
+              Assumption: &ldquo;{targetAssumptionForEvidence.statement}&rdquo;
+            </p>
+
+            <form onSubmit={handleLinkEvidenceToAssumption} className="space-y-4 mt-4">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Select Decision Evidence</label>
+                {decision.evidence && decision.evidence.length > 0 ? (
+                  <select
+                    value={chosenEvidenceId}
+                    onChange={(e) => setChosenEvidenceId(e.target.value)}
+                    className="w-full h-9 rounded-md border border-zinc-300 dark:border-zinc-800 bg-transparent px-3 text-xs"
+                    required
+                  >
+                    <option value="">-- Choose evidence item --</option>
+                    {decision.evidence.map(({ evidence }: any) => (
+                      <option key={evidence.id} value={evidence.id}>
+                        {evidence.title} ({evidence.type})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-xs text-rose-500">
+                    No evidence items attached to this decision yet. Please add evidence first.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Evidence Stance</label>
+                <select
+                  value={chosenEvidenceStance}
+                  onChange={(e) => setChosenEvidenceStance(e.target.value as any)}
+                  className="w-full h-9 rounded-md border border-zinc-300 dark:border-zinc-800 bg-transparent px-3 text-xs"
+                >
+                  <option value="SUPPORTS">SUPPORTS — Confirms or strengthens the premise</option>
+                  <option value="CONTRADICTS">CONTRADICTS — Challenges, disproves, or exposes risk</option>
+                  <option value="INCONCLUSIVE">INCONCLUSIVE — Telemetry or tests remain ambiguous</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Relevance Note</label>
+                <Textarea
+                  value={chosenEvidenceNote}
+                  onChange={(e) => setChosenEvidenceNote(e.target.value)}
+                  placeholder="Explain how this specific benchmark, metric, or finding relates to this assumption..."
+                  rows={2}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsLinkEvidenceOpen(false);
+                    setTargetAssumptionForEvidence(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  isLoading={isSubmittingLinkEv}
+                  disabled={!chosenEvidenceId}
+                >
+                  Connect Evidence
                 </Button>
               </div>
             </form>
