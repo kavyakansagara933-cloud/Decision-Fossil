@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { AssumptionService } from "./assumption-service";
+import { TimelineService } from "./timeline-service";
 import {
   CreateDecisionInput,
   UpdateDecisionInput,
@@ -411,18 +412,16 @@ export class DecisionService {
   }
 
   /**
-   * Append custom decision event to timeline
+   * Append custom decision event to timeline with deduplication
    */
   static async createDecisionEvent(input: CreateDecisionEventInput) {
-    return await prisma.decisionEvent.create({
-      data: {
-        decisionId: input.decisionId,
-        actorId: input.actorId || null,
-        eventType: input.eventType,
-        title: input.title,
-        detail: input.detail,
-        metadata: input.metadata,
-      },
+    return await TimelineService.recordEvent({
+      decisionId: input.decisionId,
+      actorId: input.actorId || null,
+      eventType: input.eventType as any,
+      title: input.title,
+      detail: input.detail,
+      metadata: input.metadata,
     });
   }
 
