@@ -320,3 +320,45 @@ export const CreateDecisionEventSchema = z.object({
   metadata: z.string().optional(),
 });
 export type CreateDecisionEventInput = z.infer<typeof CreateDecisionEventSchema>;
+
+// ─── Health Scoring Types ──────────────────────────────────────────────────
+export const HealthStatusSchema = z.enum(["HEALTHY", "NEEDS_ATTENTION", "AT_RISK", "CRITICAL"]);
+export type HealthStatus = z.infer<typeof HealthStatusSchema>;
+
+export const HealthFactorSchema = z.object({
+  factor: z.string(),
+  deduction: z.number(),
+  reason: z.string(),
+  severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+});
+export type HealthFactor = z.infer<typeof HealthFactorSchema>;
+
+export const HealthMetricsSchema = z.object({
+  totalAssumptions: z.number(),
+  invalidatedAssumptions: z.number(),
+  challengedAssumptions: z.number(),
+  overdueAssumptions: z.number(),
+  untestedAssumptions: z.number(),
+  totalEvidence: z.number(),
+  supportingEvidence: z.number(),
+  contradictingEvidence: z.number(),
+  totalOutcomes: z.number(),
+  achievedOutcomes: z.number(),
+  failedOutcomes: z.number(),
+  pendingOutcomes: z.number(),
+});
+export type HealthMetrics = z.infer<typeof HealthMetricsSchema>;
+
+export const DecisionHealthResultSchema = z.object({
+  decisionId: z.string(),
+  score: z.number().min(0).max(100),
+  status: HealthStatusSchema,
+  summary: z.string(),
+  factors: z.array(HealthFactorSchema),
+  warnings: z.array(z.string()),
+  recommendations: z.array(z.string()),
+  metrics: HealthMetricsSchema,
+  evaluatedAt: z.string(),
+});
+export type DecisionHealthResult = z.infer<typeof DecisionHealthResultSchema>;
+
