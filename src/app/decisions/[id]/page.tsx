@@ -28,6 +28,13 @@ import {
   Link2,
   Unlink,
   X,
+  Filter,
+  Search,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -116,6 +123,54 @@ export default function DecisionDetailPage() {
   const [outcomeNotesText, setOutcomeNotesText] = useState("");
   const [isSubmittingOutcome, setIsSubmittingOutcome] = useState(false);
 
+  // 8. Interactive Timeline Activity Feed
+  const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
+  const [timelinePagination, setTimelinePagination] = useState({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 1,
+    hasMore: false,
+    hasPrevious: false,
+  });
+  const [timelineCategory, setTimelineCategory] = useState<string>("ALL");
+  const [timelineOrder, setTimelineOrder] = useState<"asc" | "desc">("desc");
+  const [timelineSearch, setTimelineSearch] = useState<string>("");
+  const [timelinePage, setTimelinePage] = useState<number>(1);
+  const [isTimelineLoading, setIsTimelineLoading] = useState<boolean>(false);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
+  const fetchTimeline = async (
+    page = timelinePage,
+    category = timelineCategory,
+    order = timelineOrder,
+    search = timelineSearch
+  ) => {
+    if (!id) return;
+    try {
+      setIsTimelineLoading(true);
+      const query = new URLSearchParams();
+      query.set("page", String(page));
+      query.set("pageSize", "10");
+      query.set("order", order);
+      if (category && category !== "ALL") query.set("category", category);
+      if (search.trim()) query.set("search", search.trim());
+
+      const res = await fetch(`/api/decisions/${id}/timeline?${query.toString()}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTimelineEvents(data.events || []);
+        if (data.pagination) {
+          setTimelinePagination(data.pagination);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch decision timeline feed:", err);
+    } finally {
+      setIsTimelineLoading(false);
+    }
+  };
+
   const fetchDecision = async () => {
     try {
       setIsLoading(true);
@@ -126,6 +181,7 @@ export default function DecisionDetailPage() {
         throw new Error(data.error || "Failed to load decision");
       }
       setDecision(data.decision);
+      fetchTimeline(timelinePage, timelineCategory, timelineOrder, timelineSearch);
 
       // Pre-fill edit fields
       setEditTitle(data.decision.title);
@@ -142,8 +198,17 @@ export default function DecisionDetailPage() {
   };
 
   useEffect(() => {
-    if (id) fetchDecision();
+    if (id) {
+      fetchDecision();
+      fetchTimeline(1, timelineCategory, timelineOrder, timelineSearch);
+    }
   }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      fetchTimeline(timelinePage, timelineCategory, timelineOrder, timelineSearch);
+    }
+  }, [timelinePage, timelineCategory, timelineOrder]);
 
   // ─── Lifecycle Status Transition ─────────────────────────────────────────
   const handleStatusTransition = async (e: React.FormEvent) => {
@@ -1058,26 +1123,196 @@ export default function DecisionDetailPage() {
 
         {/* Right Column: Visual Timeline & Version Snapshots */}
         <div className="space-y-6">
-          {/* Decision Timeline Events */}
+          {/* Decision Timeline Events (Enhanced Activity Feed) */}
           <Card>
-            <CardHeader className="p-4 pb-2 border-b border-zinc-100 dark:border-zinc-800">
-              <CardTitle className="text-xs font-mono uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" /> Chronological Event Timeline
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              <div className="relative pl-4 space-y-4 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-[1px] before:bg-zinc-200 dark:before:bg-zinc-800">
-                {decision.events?.map((evt: any) => (
-                  <div key={evt.id} className="relative text-xs">
-                    <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-100 ring-2 ring-white dark:ring-zinc-950" />
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-100">{evt.title}</p>
-                    {evt.detail && <p className="text-zinc-500 text-[11px] mt-0.5">{evt.detail}</p>}
-                    <span className="text-[10px] text-zinc-400 font-mono block mt-1">
-                      {new Date(evt.occurredAt).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
+            <CardHeader className="p-4 pb-3 border-b border-zinc-100 dark:border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xs font-mono uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" /> Decision Activity Timeline ({timelinePagination.total})
+                </CardTitle>
+                <button
+                  type="button"
+                  onClick={() => setTimelineOrder(timelineOrder === "desc" ? "asc" : "desc")}
+                  className="flex items-center gap-1 text-[11px] font-mono text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 rounded transition-colors"
+                  title="Toggle Chronological Direction"
+                >
+                  <ArrowUpDown className="h-3 w-3" />
+                  {timelineOrder === "desc" ? "Newest First" : "Oldest First"}
+                </button>
               </div>
+
+              {/* Filter Search */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-zinc-400" />
+                <Input
+                  value={timelineSearch}
+                  onChange={(e) => {
+                    setTimelineSearch(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      setTimelinePage(1);
+                      fetchTimeline(1, timelineCategory, timelineOrder, timelineSearch);
+                    }
+                  }}
+                  placeholder="Filter events by keyword..."
+                  className="pl-7 h-8 text-xs bg-zinc-50/50 dark:bg-zinc-900/50"
+                />
+                {timelineSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTimelineSearch("");
+                      setTimelinePage(1);
+                      fetchTimeline(1, timelineCategory, timelineOrder, "");
+                    }}
+                    className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] no-scrollbar">
+                {["ALL", "DECISION", "ALTERNATIVE", "ASSUMPTION", "EVIDENCE", "OUTCOME", "AI"].map((cat) => {
+                  const isActive = timelineCategory === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setTimelineCategory(cat);
+                        setTimelinePage(1);
+                      }}
+                      className={`px-2 py-0.5 rounded-full font-mono whitespace-nowrap transition-colors ${
+                        isActive
+                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-semibold"
+                          : "bg-zinc-100 dark:bg-zinc-800/60 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-4">
+              {isTimelineLoading ? (
+                <div className="py-6 text-center text-xs text-zinc-400 font-mono">
+                  Refreshing timeline activity stream...
+                </div>
+              ) : timelineEvents.length === 0 ? (
+                <div className="py-6 text-center text-xs text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-800 rounded p-4">
+                  No activity events match query filters.
+                </div>
+              ) : (
+                <div className="relative pl-4 space-y-4 before:absolute before:left-1 before:top-2 before:bottom-2 before:w-[1px] before:bg-zinc-200 dark:before:bg-zinc-800">
+                  {timelineEvents.map((evt: any) => {
+                    const isExpanded = expandedEventId === evt.id;
+                    const parsedMeta = typeof evt.metadata === "string" ? (() => {
+                      try { return JSON.parse(evt.metadata); } catch { return evt.metadata; }
+                    })() : evt.metadata;
+
+                    return (
+                      <div key={evt.id} className="relative text-xs group">
+                        <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-zinc-900 dark:bg-zinc-100 ring-2 ring-white dark:ring-zinc-950" />
+                        
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
+                            {evt.title}
+                          </p>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {evt.category && (
+                              <Badge variant="outline" size="sm" className="text-[9px] px-1.5 py-0 font-mono">
+                                {evt.category}
+                              </Badge>
+                            )}
+                            {evt.actorType && (
+                              <Badge
+                                variant={evt.actorType === "AI" ? "neutral" : "default"}
+                                size="sm"
+                                className="text-[9px] px-1 py-0 font-mono"
+                              >
+                                {evt.actorType}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        {evt.detail && (
+                          <p className="text-zinc-600 dark:text-zinc-400 text-[11px] mt-1 leading-snug">
+                            {evt.detail}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between mt-1 pt-0.5 text-[10px] text-zinc-400 font-mono">
+                          <span>{new Date(evt.occurredAt).toLocaleString()}</span>
+
+                          {parsedMeta && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedEventId(isExpanded ? null : evt.id)}
+                              className="flex items-center gap-0.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  Hide Diff <ChevronUp className="h-3 w-3" />
+                                </>
+                              ) : (
+                                <>
+                                  Inspect Metadata <ChevronDown className="h-3 w-3" />
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Expandable Metadata Inspector */}
+                        {isExpanded && parsedMeta && (
+                          <div className="mt-2 p-2 rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-[10px] text-zinc-700 dark:text-zinc-300 overflow-x-auto max-h-48">
+                            <pre className="whitespace-pre-wrap leading-tight">
+                              {typeof parsedMeta === "object"
+                                ? JSON.stringify(parsedMeta, null, 2)
+                                : String(parsedMeta)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Pagination Controls */}
+              {timelinePagination.totalPages > 1 && (
+                <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800 text-xs">
+                  <span className="text-[11px] text-zinc-400 font-mono">
+                    Page {timelinePagination.page} of {timelinePagination.totalPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      disabled={!timelinePagination.hasPrevious}
+                      onClick={() => setTimelinePage((prev) => Math.max(1, prev - 1))}
+                    >
+                      <ChevronLeft className="h-3 w-3 mr-0.5" /> Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      disabled={!timelinePagination.hasMore}
+                      onClick={() => setTimelinePage((prev) => prev + 1)}
+                    >
+                      Next <ChevronRight className="h-3 w-3 ml-0.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
