@@ -68,19 +68,54 @@ export const EventTypeSchema = z.enum([
   "DECIDED",
   "VERSION_CREATED",
   "ALTERNATIVE_ADDED",
+  "ALTERNATIVE_UPDATED",
+  "ALTERNATIVE_REMOVED",
   "ASSUMPTION_ADDED",
   "ASSUMPTION_UPDATED",
   "ASSUMPTION_STATUS_CHANGED",
   "ASSUMPTION_EVIDENCE_LINKED",
   "ASSUMPTION_EVIDENCE_UNLINKED",
+  "ASSUMPTION_REMOVED",
   "EVIDENCE_ADDED",
+  "EVIDENCE_UPDATED",
+  "EVIDENCE_LINKED",
+  "EVIDENCE_UNLINKED",
   "OUTCOME_RECORDED",
+  "OUTCOME_UPDATED",
   "REASSESSMENT_STARTED",
+  "REASSESSMENT_COMPLETED",
   "STATUS_CHANGED",
   "SUPERSEDED",
+  "AI_PROPOSALS_APPLIED",
+  "RELATIONSHIP_ADDED",
+  "RELATIONSHIP_REMOVED",
   "CUSTOM",
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
+
+export const TimelineCategorySchema = z.enum([
+  "ALL",
+  "DECISION",
+  "ALTERNATIVE",
+  "ASSUMPTION",
+  "EVIDENCE",
+  "OUTCOME",
+  "AI",
+  "STATUS",
+]);
+export type TimelineCategory = z.infer<typeof TimelineCategorySchema>;
+
+export const TimelineQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(15),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  category: TimelineCategorySchema.default("ALL"),
+  actorId: z.string().optional(),
+  search: z.string().optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+});
+export type TimelineQueryInput = z.infer<typeof TimelineQuerySchema>;
 
 // ─── Creation & Mutation Schemas ──────────────────────────────────────────
 
