@@ -362,3 +362,51 @@ export const DecisionHealthResultSchema = z.object({
 });
 export type DecisionHealthResult = z.infer<typeof DecisionHealthResultSchema>;
 
+// ─── Decision Relationships (Knowledge Graph) ─────────────────────────────────
+export const RelationshipTypeSchema = z.enum([
+  "DEPENDS_ON",
+  "SUPERSEDES",
+  "CONFLICTS_WITH",
+  "SUPPORTS",
+  "SHARES_ASSUMPTION",
+  "RELATES_TO",
+]);
+export type RelationshipType = z.infer<typeof RelationshipTypeSchema>;
+
+export const CreateRelationshipSchema = z.object({
+  sourceDecisionId: z.string().min(1, "sourceDecisionId is required"),
+  targetDecisionId: z.string().min(1, "targetDecisionId is required"),
+  type: RelationshipTypeSchema,
+  description: z.string().optional(),
+});
+export type CreateRelationshipInput = z.infer<typeof CreateRelationshipSchema>;
+
+export const GraphNodeSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.string(),
+  priority: z.string(),
+  healthScore: z.number().optional(),
+  healthStatus: z.string().optional(),
+  currentVersion: z.number().optional(),
+});
+export type GraphNode = z.infer<typeof GraphNodeSchema>;
+
+export const GraphEdgeSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+  type: RelationshipTypeSchema,
+  description: z.string().nullable().optional(),
+});
+export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
+
+export const DecisionGraphSchema = z.object({
+  rootId: z.string(),
+  nodes: z.array(GraphNodeSchema),
+  edges: z.array(GraphEdgeSchema),
+  cyclesDetected: z.boolean().default(false),
+});
+export type DecisionGraph = z.infer<typeof DecisionGraphSchema>;
+
+

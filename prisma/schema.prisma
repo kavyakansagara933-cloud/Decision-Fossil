@@ -132,6 +132,8 @@ model Decision {
   events         DecisionEvent[]
   comments       Comment[]
   tags           DecisionTag[]
+  sourceRelationships DecisionRelationship[] @relation("SourceDecision")
+  targetRelationships DecisionRelationship[] @relation("TargetDecision")
 
   @@index([workspaceId])
   @@index([creatorId])
@@ -381,4 +383,24 @@ model DecisionTag {
 
   @@unique([decisionId, tagId])
   @@map("decision_tags")
+}
+
+// ─── Decision Relationships (Knowledge Graph) ─────────────────────────────────
+model DecisionRelationship {
+  id               String   @id @default(cuid())
+  sourceDecisionId String
+  targetDecisionId String
+  type             String   // DEPENDS_ON, SUPERSEDES, CONFLICTS_WITH, SUPPORTS, SHARES_ASSUMPTION, RELATES_TO
+  description      String?  // Context or explanation of relationship
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sourceDecision Decision @relation("SourceDecision", fields: [sourceDecisionId], references: [id], onDelete: Cascade)
+  targetDecision Decision @relation("TargetDecision", fields: [targetDecisionId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceDecisionId, targetDecisionId, type])
+  @@index([sourceDecisionId])
+  @@index([targetDecisionId])
+  @@index([type])
+  @@map("decision_relationships")
 }
