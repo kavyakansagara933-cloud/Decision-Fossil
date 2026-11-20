@@ -44,7 +44,8 @@ import { LoadingState, ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { Input, Textarea } from "@/components/ui/input";
 import { DecisionHealthMeter } from "@/components/ui/health-meter";
-import { DecisionHealthResult } from "@/types/decision";
+import { DecisionGraphView } from "@/components/ui/decision-graph-view";
+import { DecisionHealthResult, DecisionGraph, RelationshipType } from "@/types/decision";
 
 export default function DecisionDetailPage() {
   const params = useParams();
@@ -146,6 +147,16 @@ export default function DecisionDetailPage() {
   const [health, setHealth] = useState<DecisionHealthResult | null>(null);
   const [isHealthLoading, setIsHealthLoading] = useState<boolean>(false);
 
+  // 10. Decision Knowledge Graph & Relationships
+  const [graph, setGraph] = useState<DecisionGraph | null>(null);
+  const [isGraphLoading, setIsGraphLoading] = useState(false);
+  const [isLinkRelModalOpen, setIsLinkRelModalOpen] = useState(false);
+  const [targetRelDecisionId, setTargetRelDecisionId] = useState("");
+  const [relType, setRelType] = useState<RelationshipType>("DEPENDS_ON");
+  const [relDescription, setRelDescription] = useState("");
+  const [isSubmittingRel, setIsSubmittingRel] = useState(false);
+  const [allDecisionsList, setAllDecisionsList] = useState<any[]>([]);
+
   const fetchHealth = async () => {
     if (!id) return;
     try {
@@ -159,6 +170,89 @@ export default function DecisionDetailPage() {
       console.error("Failed to load decision health:", err);
     } finally {
       setIsHealthLoading(false);
+    }
+  };
+
+  const fetchGraph = async () => {
+    if (!id) return;
+    try {
+      setIsGraphLoading(true);
+      const [graphRes, decsRes] = await Promise.all([
+        fetch(`/api/decisions/${id}/graph?depth=2`),
+        fetch(`/api/decisions`),
+      ]);
+      const [graphData, decsData] = await Promise.all([graphRes.json(), decsRes.json()]);
+      if (graphRes.ok && graphData.success) {
+        setGraph(graphData.graph);
+      }
+      if (decsRes.ok && decsData.success) {
+        setAllDecisionsList(decsData.decisions?.filter((d: any) => d.id !== id) || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch decision graph:", err);
+    } finally {
+      setIsGraphLoading(false);
+    }
+  };
+
+  const handleAddRelationship = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetRelDecisionId) {
+      toast({ type: "error", title: "Target Required", message: "Please choose a decision to link." });
+      return;
+    }
+    try {
+      setIsSubmittingRel(true);
+      const res = await fetch(`/api/decisions/${id}/relationships`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetDecisionId: targetRelDecisionId,
+          type: relType,
+          description: relDescription.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to link decision relationship");
+      }
+      toast({
+        type: "success",
+        title: "Relationship Preserved",
+        message: `Connected decision with ${relType} relationship.`,
+      });
+      setIsLinkRelModalOpen(false);
+      setTargetRelDecisionId("");
+      setRelDescription("");
+      fetchGraph();
+      fetchTimeline();
+      fetchHealth();
+    } catch (err: any) {
+      toast({ type: "error", title: "Relationship Blocked", message: err.message });
+    } finally {
+      setIsSubmittingRel(false);
+    }
+  };
+
+  const handleRemoveRelationship = async (relId: string) => {
+    try {
+      const res = await fetch(`/api/decisions/${id}/relationships/${relId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to remove relationship");
+      }
+      toast({
+        type: "success",
+        title: "Relationship Removed",
+        message: "Disconnected decision edge.",
+      });
+      fetchGraph();
+      fetchTimeline();
+      fetchHealth();
+    } catch (err: any) {
+      toast({ type: "error", title: "Delete Failed", message: err.message });
     }
   };
 
@@ -205,6 +299,7 @@ export default function DecisionDetailPage() {
       setDecision(data.decision);
       fetchTimeline(timelinePage, timelineCategory, timelineOrder, timelineSearch);
       fetchHealth();
+      fetchGraph();
 
       // Pre-fill edit fields
       setEditTitle(data.decision.title);
@@ -224,6 +319,7 @@ export default function DecisionDetailPage() {
     if (id) {
       fetchDecision();
       fetchTimeline(1, timelineCategory, timelineOrder, timelineSearch);
+      fetchGraph();
     }
   }, [id]);
 
@@ -1142,6 +1238,39 @@ export default function DecisionDetailPage() {
               </div>
             )}
           </section>
+
+          {/* 7. Architecture Relationship Graph */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider font-mono text-zinc-500">
+                7. Architectural Lineage &amp; Dependencies ({graph?.nodes.length || 0} nodes, {graph?.edges.length || 0} edges)
+              </h2>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/decisions/${id}/graph`}
+                  className="text-xs font-mono text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                >
+                  Full Topology <ExternalLink className="h-3 w-3" />
+                </Link>
+                <Button
+                  onClick={() => setIsLinkRelModalOpen(true)}
+                  size="sm"
+                  variant="outline"
+                  className="text-xs gap-1 h-7"
+                >
+                  <Plus className="h-3 w-3" /> Link Decision
+                </Button>
+              </div>
+            </div>
+
+            <DecisionGraphView
+              graph={graph}
+              isLoading={isGraphLoading}
+              onRefresh={fetchGraph}
+              onAddRelationship={() => setIsLinkRelModalOpen(true)}
+              onRemoveRelationship={handleRemoveRelationship}
+            />
+          </section>
         </div>
 
         {/* Right Column: Visual Timeline & Version Snapshots */}
@@ -1897,6 +2026,77 @@ export default function DecisionDetailPage() {
                 </Button>
                 <Button type="submit" size="sm" isLoading={isSubmittingOutcome}>
                   Preserve Outcome
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 8: Link Relationship */}
+      {isLinkRelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-base font-semibold">Connect Architectural Relationship</h3>
+            <p className="text-xs text-zinc-500 mt-1">
+              Connect this decision to another architectural choice. Cycle detection will prevent circular dependency chains.
+            </p>
+
+            <form onSubmit={handleAddRelationship} className="space-y-4 mt-4">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Relationship Type</label>
+                <select
+                  value={relType}
+                  onChange={(e) => setRelType(e.target.value as RelationshipType)}
+                  className="w-full h-9 rounded-md border border-zinc-300 dark:border-zinc-800 bg-transparent px-3 text-xs"
+                >
+                  <option value="DEPENDS_ON">DEPENDS_ON — Prerequisite architectural choice</option>
+                  <option value="SUPERSEDES">SUPERSEDES — Replaces and marks target superseded</option>
+                  <option value="CONFLICTS_WITH">CONFLICTS_WITH — Mutual architectural friction</option>
+                  <option value="SUPPORTS">SUPPORTS — Complements or reinforces reasoning</option>
+                  <option value="SHARES_ASSUMPTION">SHARES_ASSUMPTION — Shared premise or hypothesis</option>
+                  <option value="RELATES_TO">RELATES_TO — Contextual association</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Target Decision</label>
+                <select
+                  value={targetRelDecisionId}
+                  onChange={(e) => setTargetRelDecisionId(e.target.value)}
+                  className="w-full h-9 rounded-md border border-zinc-300 dark:border-zinc-800 bg-transparent px-3 text-xs"
+                  required
+                >
+                  <option value="">Select a decision to link...</option>
+                  {allDecisionsList.map((dec) => (
+                    <option key={dec.id} value={dec.id}>
+                      {dec.title} ({dec.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Context / Justification (Optional)</label>
+                <Textarea
+                  value={relDescription}
+                  onChange={(e) => setRelDescription(e.target.value)}
+                  placeholder="Explain why these decisions are linked..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsLinkRelModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" isLoading={isSubmittingRel}>
+                  Preserve Connection
                 </Button>
               </div>
             </form>
