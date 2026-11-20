@@ -43,6 +43,8 @@ import { DecisionStatusBadge } from "@/components/ui/status-badge";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { Input, Textarea } from "@/components/ui/input";
+import { DecisionHealthMeter } from "@/components/ui/health-meter";
+import { DecisionHealthResult } from "@/types/decision";
 
 export default function DecisionDetailPage() {
   const params = useParams();
@@ -140,6 +142,26 @@ export default function DecisionDetailPage() {
   const [isTimelineLoading, setIsTimelineLoading] = useState<boolean>(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
+  // 9. Decision Health & Defensibility
+  const [health, setHealth] = useState<DecisionHealthResult | null>(null);
+  const [isHealthLoading, setIsHealthLoading] = useState<boolean>(false);
+
+  const fetchHealth = async () => {
+    if (!id) return;
+    try {
+      setIsHealthLoading(true);
+      const res = await fetch(`/api/decisions/${id}/health`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setHealth(data.health);
+      }
+    } catch (err) {
+      console.error("Failed to load decision health:", err);
+    } finally {
+      setIsHealthLoading(false);
+    }
+  };
+
   const fetchTimeline = async (
     page = timelinePage,
     category = timelineCategory,
@@ -182,6 +204,7 @@ export default function DecisionDetailPage() {
       }
       setDecision(data.decision);
       fetchTimeline(timelinePage, timelineCategory, timelineOrder, timelineSearch);
+      fetchHealth();
 
       // Pre-fill edit fields
       setEditTitle(data.decision.title);
@@ -1123,6 +1146,18 @@ export default function DecisionDetailPage() {
 
         {/* Right Column: Visual Timeline & Version Snapshots */}
         <div className="space-y-6">
+          {/* Health & Defensibility Meter */}
+          <DecisionHealthMeter
+            health={health}
+            isLoading={isHealthLoading}
+            onRefresh={fetchHealth}
+            onRequestReassess={() => {
+              setNextStatus("REASSESSING");
+              setStatusReason("Triggered due to health score degradation and compromised decision premises.");
+              setIsTransitionOpen(true);
+            }}
+          />
+
           {/* Decision Timeline Events (Enhanced Activity Feed) */}
           <Card>
             <CardHeader className="p-4 pb-3 border-b border-zinc-100 dark:border-zinc-800 space-y-3">
